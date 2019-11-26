@@ -1,0 +1,7 @@
+pandas
+numpy
+pytz
+requests
+flask
+APScheduler
+waitress
