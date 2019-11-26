@@ -1,55 +1,28 @@
 {% extends "template.html" %}
 {% block content %}
-<div>consensus estimate:</div>
-<div id="blockchain-consensus"></div>
-<div>production server node: rpc8.primecoin.org</div>
+<div>production server node: vsys supernode</div>
 <div id="blockchain-data"></div>
-<div>development server node: rpc16.primecoin.org</div>
-<div id="blockchain-data-dev"></div>
 <div id="peer-data"></div>
 <script>
 $(document).ready(function () {
-  $.getJSON('/api/getbestblock8/', function (data) {
+  $.getJSON('/api/getlastblock/', function (data) {
     console.log(data);
     var transform =
       {'<>':'div','html':[
-        {'<>':'div','html':'block: <a href="/block/${hash}">${hash}</a>'},
+        {'<>':'div','html':'block: <a href="/block/${signature}">${signature}</a>'},
         {'<>':'div','html':'height: ${height}'},
-        {'<>':'div','html':'difficulty: ${difficulty}'} ] };
+        {'<>':'div','html':'generator: ${generator}'} ] };
 
-    $('#blockchain-data').json2html(data["result"], transform);
-  });
-
-  $.getJSON('/api/getblockchaininfo/', function (data) {
-    console.log(data);
-    var transform =
-      {'<>':'div','html':[
-        {'<>':'div','html':'block: <a href="/block/${bestblockhash}">${bestblockhash}</a>'},
-        {'<>':'div','html':'height: ${blocks}'},
-        {'<>':'div','html':'difficulty: ${difficulty}'},
-        {'<>':'div','html':'connected peers:'} ] };
-
-    $('#blockchain-data-dev').json2html(data["result"], transform);
-  });
-
-  $.getJSON('/api/consensus/', function (data) {
-    console.log(data);
-    var transform =
-      {'<>':'div','html':[
-        {'<>':'div','html':'block: <a href="/block/${hash}">${hash}</a>'},
-        {'<>':'div','html':'height: ${height}'},
-        {'<>':'div','html':'difficulty: ${difficulty}'} ] };
-
-    $('#blockchain-consensus').json2html(data["result"], transform);
+    $('#blockchain-data').json2html(data, transform);
   });
 
   $.getJSON('/api/getpeerinfo/', function (data) {
     console.log(data);
     var transform =
       {'<>':'div','html':[
-        {'<>':'div','html':'peer @${synced_blocks} version ${version}${subver}</a>'} ] };
+        {'<>':'div','html':'peer @${address} version ${applicationVersion} name ${peerName}</a>'} ] };
 
-    $('#peer-data').json2html(data["result"], transform);
+    $('#peer-data').json2html(data["peers"], transform);
   });
 
 });

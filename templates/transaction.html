@@ -3,25 +3,18 @@
 <div id="tx-data"></div>
 <script>
 $(document).ready(function () {
-  $.getJSON('/api/getrawtransaction/{{txid}}', function (data) {
+  $.getJSON('/api/gettransactioninfo/{{txid}}', function (data) {
     console.log(data);
     var transformTx =
       {'<>':'div','html':[
-        {'<>':'div','html':'txid/hash: ${txid}</a>'},
-        {'<>':'div','html':'block: <a href="/block/${blockhash}">${blockhash}</a>'},
-        {'<>':'div','html':'confirmations: ${confirmations}'},
-        {'<>':'div','html':'inputs:'},
-        {'<>':'div','id':'vin-data','html':''},
-        {'<>':'div','html':'outputs:'},
-        {'<>':'div','id':'vout-data','html':''} ] };
+        {'<>':'div','html':'txid: <a href="/transaction/${id}">${id}</a>'},
+        {'<>':'div','html':'type: ${type}'},
+        {'<>':'div','html':'block: <a href="/block/${height}">${height}</a>'},
+        {'<>':'div','html':'recipient: ${recipient}'},
+        {'<>':'div','html':'status: ${status}'},
+        {'<>':'div','html':'timestamp: ${timestamp}'}] };
 
-    $('#tx-data').json2html(data["result"], transformTx);
-
-    var transformVout =
-      {'<>':'div','html':[
-        {'<>':'div','html':'<a href="/address/${scriptPubKey.addresses.0}">${scriptPubKey.addresses.0}</a>: Ψ${value}'}] };
-
-    $('#vout-data').json2html(data["result"]["vout"], transformVout);
+    $('#tx-data').json2html(data, transformTx);
 
   });
 });

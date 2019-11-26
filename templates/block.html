@@ -3,34 +3,26 @@
 <div id="block-data"></div>
 <script>
 $(document).ready(function () {
-  $.getJSON('/api/getblock/{{heightOrAddress}}', function (data) {
+  $.getJSON('/api/getblock/{{heightOrSignature}}', function (data) {
     console.log(data);
     var transformHeader =
       {'<>':'div','html':[
-        {'<>':'div','html':'hash: ${hash}</a>'},
-        {'<>':'div','html':'previous block: <a href="/block/${previousblockhash}">${previousblockhash}</a>'},
+        {'<>':'div','html':'signature: ${signature}</a>'},
+        {'<>':'div','html':'previous block: <a href="/block/${reference}">${reference}</a>'},
         {'<>':'div','html':'height: ${height}'},
-        {'<>':'div','html':'difficulty: ${difficulty}'},
-	{'<>':'div','html':'primechain: ${primechain}'},
-	{'<>':'div','html':'primeorigin: ${primeorigin}'},
-        {'<>':'div','html':'primes:'},
-        {'<>':'div','id':'prime-data','html':''},
+        {'<>':'div','html':'generator: ${generator}'},
+        {'<>':'div','html':'fee: ${fee}'},
+        {'<>':'div','html':'blocksize: ${blocksize}'},
         {'<>':'div','html':'transactions:'},
         {'<>':'div','id':'tx-data','html':''} ] };
 
-    $('#block-data').json2html(data["result"], transformHeader);
-
-    var transformPrime =
-      {'<>':'div','html':[
-        {'<>':'div','html':function(prime, index) { return('<a href="https://www.wolframalpha.com/input/?i=is+'+prime+'+a+prime+number?">'+prime+'</a>'); } }] };
-
-    $('#prime-data').json2html(data["result"]["primes"], transformPrime);
+    $('#block-data').json2html(data, transformHeader);
 
     var transformTx =
       {'<>':'div','html':[
-        {'<>':'div','html':'<a href="/transaction/${hash}">${hash}</a>'}] };
+        {'<>':'div','html':'<a href="/transaction/${id}">${id}</a>'}] };
 
-    $('#tx-data').json2html(data["result"]["tx"], transformTx);
+    $('#tx-data').json2html(data["transactions"], transformTx);
 
   });
 });

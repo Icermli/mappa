@@ -9,24 +9,24 @@ $(document).ready(function () {
     var transformBalance =
       {'<>':'div','html':[
         {'<>':'div','html':'address: {{address}}</a>'},
-	      {'<>':'div','html':'balance: Ψ<span id="balance-data">${balance}</span>'},
+	    {'<>':'div','html':'balance: Ψ<span id="balance-data">${balance}</span>'},
         {'<>':'div','html':'transactions:'} ] };
 
-    $('#address-data').json2html(data["result"], transformBalance);
+    $('#address-data').json2html(data, transformBalance);
     // format balance field
-    $('#balance-data').text(parseFloat($('#balance-data').text() / 100000000.0));
+    $('#balance-data').text(parseFloat($('#balance-data').text()));
   });
 
-  $.getJSON('/api/searchrawtransactions/{{address}}/0', function (data) {
+  $.getJSON('/api/gettransactions/{{address}}', function (data) {
     console.log(data);
     var transformTx =
       {'<>':'div','html':[
-        {'<>':'div','html':function(tx, index){return((new Date(1000*tx.blocktime).toDateString()) + ' <a href="/transaction/' + tx.hash + '">' + tx.hash + '</a>');}}] };
+        {'<>':'div','html':'<a href="/transaction/${id}">${id}</a>'}] };
 
-    if (data["result"].length >= 100) {
+    if (data[0].length >= 100) {
       $('#error').text("Warning: Address has too many transactions. Only partial list is shown from the oldest. Consider moving coins to new address.");
     }
-    $('#tx-data').json2html(data["result"].reverse(), transformTx);
+    $('#tx-data').json2html(data[0], transformTx);
 
   });
 });

@@ -1,221 +1,141 @@
 # app.py
 
 from flask import Flask, jsonify, render_template
-from flask_jsonrpc import JSONRPC
+from requests.exceptions import RequestException
+from datetime import datetime
 
+import os
 import json
+import logging
 import requests
+import pandas as pd
 
-app = Flask(__name__, instance_relative_config=True)
-app.config.from_object('config')
-app.config.from_pyfile('config.py')
-if 'NETWORK' not in app.config:
-    raise RuntimeError("Setting 'NETWORK' is not configured")
-if app.config['NETWORK'] != 'mainnet' and app.config['NETWORK'] != 'testnet':
-    raise RuntimeError("Setting 'NETWORK' can only be 'mainnet' or 'testnet'")
-if app.config['NETWORK'] == 'mainnet' and 'MAINNET_RPC_URL' not in app.config:
-    raise RuntimeError("Setting 'MAINNET_RPC_URL' is not configured")
-if app.config['NETWORK'] == 'mainnet' and 'MAINNET_RPC8_URL' not in app.config:
-    raise RuntimeError("Setting 'MAINNET_RPC8_URL' is not configured")
-if app.config['NETWORK'] == 'testnet' and 'TESTNET_RPC_URL' not in app.config:
-    raise RuntimeError("Setting 'TESTNET_RPC_URL' is not configured")
+with open('config.json') as config_file:
+    config = json.load(config_file)
+logging.debug("Loaded config file:\n%s", config)
 
-jsonrpc = JSONRPC(app, '/jsonrpc/')
+node_host = config.get("url", "http://localhost:9922")
+adds = config.get("address", [])
+
+app = Flask(__name__)
+app.config.from_object(__name__)
 
 
-def requestJsonRPC(method, params, useProductionNode = False):
-    headers = {'content-type': 'application/json'}
-    payload = {
-        "method": method,
-        "params": params,
-        "jsonrpc": "1.0",
-        "id": "mappa",
-    }
-    if useProductionNode:
-        url = app.config['MAINNET_RPC8_URL'] if app.config['NETWORK'] == 'mainnet' else app.config['TESTNET_RPC8_URL']
+def monitor(address):
+    """Monitor for addresses on VSYS chain.
+
+    :param address: list of address to be monitored
+    :return:
+
+    """
+    for s in address:
+        _get_txs(s)
+
+
+def _get_txs(address):
+    url = os.path.join('/transactions', 'address', address, 'limit', '4500')
+    txs = request(url)[0]
+    # cnt_time = int(time.time() * 1000000000) // 6000000000 * 6000000000
+    # check_time = 5 * 60 * 1000000000
+    txs = [x for x in txs if x['type'] == 2 and x['recipient'] == address and x['amount'] < 10000000000]
+    if txs:
+        df = _make_visualizer(txs)
+        if not os.path.exists('target'):
+            os.makedirs('target')
+        df.to_csv('target/{}_txs.csv'.format(address))
+    return txs
+
+
+def _make_visualizer(data, vis_type=None):
+    """Visualise data in table.
+    """
+    if vis_type is None:
+        df = pd.DataFrame()
+        df['timestamp'] = [datetime.fromtimestamp(x['timestamp'] // 1000000000).strftime('%Y-%m-%d %H:%M:%S') for x in data]
+        df['id'] = [x['id'] for x in data]
+        df['height'] = [x['height'] for x in data]
+        df['type'] = [x['type'] for x in data]
+        df['sender'] = [x['proofs'][0]['address'] for x in data]
+        df['recipient'] = [x['recipient'] if 'recipient' in x else None for x in data]
+        df['fee'] = [x['fee']/100000000 for x in data]
+        df['amount'] = ['{:.4f}'.format(x['amount']/100000000) if 'amount' in x else 0 for x in data]
+        df['status'] = [x['status'] for x in data]
+        df['leaseId'] = [x['leaseId'] if 'leaseId' in x else None for x in data]
+        vis = df
     else:
-        url = app.config['MAINNET_RPC_URL'] if app.config['NETWORK'] == 'mainnet' else app.config['TESTNET_RPC_URL']
-    return requests.post(url, data=json.dumps(payload), headers=headers).json()
+        raise ValueError("Invalid vis_type %s" % str(vis_type))
+    return vis
 
-def requestBlock(heightOrAddress, useProductionNode = False):
+
+def request(api, post_data='', api_key=None):
+    headers = {}
+    url = node_host + api
+    if api_key:
+        headers['api_key'] = api_key
+    header_str = ' '.join(['--header \'{}: {}\''.format(k, v) for k, v in headers.items()])
     try:
-        height = int(heightOrAddress)
+        if post_data:
+            headers['Content-Type'] = 'application/json'
+            data_str = '-d {}'.format(post_data)
+            logging.debug("curl -X POST %s %s %s" % (header_str, data_str, url))
+            return requests.post(url, data=post_data, headers=headers).json()
+        else:
+            logging.debug("curl -X GET %s %s" % (header_str, url))
+            return requests.get(url, headers=headers).json()
+    except RequestException as ex:
+        msg = 'Failed to get response: {}'.format(ex)
+        logging.error(msg)
+
+
+def requestBlock(heightOrSignature):
+    try:
+        height = int(heightOrSignature)
         isHeight = True
-    except:
-        blockHash = heightOrAddress
+    except ValueError:
+        signature = heightOrSignature
         isHeight = False
     if isHeight:
-        response = requestJsonRPC("getblockhash", [height], useProductionNode)
-        if "error" in response and response["error"] != None:
-            return response
-        blockHash = response["result"]
-
-    response = requestJsonRPC("getblock", [blockHash] if useProductionNode else [blockHash, 2], useProductionNode)
-    if "error" in response and response["error"] != None:
-        return response
-    chain = response["result"]["primechain"]
-    origin = int(response["result"]["primeorigin"], 10)
-    chainType = chain[:3]
-    chainLength = int(chain[3:5], 16)
-    primes = []
-    delta = -1 if chainType == '1CC' else 1
-    for i in range(chainLength):
-        delta *= (-1) if chainType == 'TWN' else 1
-        primes.append(str(origin + delta))
-        origin *= 1 if chainType == 'TWN' and delta == -1 else 2
-    response["result"]["primes"] = primes
+        response = request(os.path.join('/blocks/at', str(height)))
+    else:
+        response = request(os.path.join('/blocks/signature', signature))
     return response
 
-def requestBestBlock(useProductionNode = False):
-    if useProductionNode:
-        response = requestJsonRPC("getinfo", [], useProductionNode)
-        if "error" in response and response["error"] != None:
-            return response
-        else:
-            blockHeight = response["result"]["blocks"]
-            return requestBlock(blockHeight, useProductionNode)
-    else:
-        response = requestJsonRPC("getbestblockhash", [])
-        if "error" in response and response["error"] != None:
-            return response
-        else:
-            blockHash = response["result"]
-            return requestBlock(blockHash, useProductionNode)
 
-def checkConsensus(height):
-    response = requestBlock(height)
-    if "error" in response and response["error"] != None:
-        return False
-    response8 = requestBlock(height, useProductionNode = True)
-    if "error" in response8 and response8["error"] != None:
-        return False
-    return response["result"]["hash"] == response8["result"]["hash"]
+@app.route('/api/getheight/')
+def getHeight():
+    return jsonify(request('/blocks/height')), 200
 
 
-# JSON-RPC pass through to node
+@app.route('/api/getblock/<heightOrSignature>')
+def getBlock(heightOrSignature):
+    return jsonify(requestBlock(heightOrSignature)), 200
 
-@jsonrpc.method('getwork(data=str)')
-def getWork(data = None):
-    response = requestJsonRPC("getwork", [] if data == None else [data], useProductionNode = True)
-    if "error" in response and response["error"] != None:
-        raise ValueError(response["error"])
-    else:
-        return response["result"]
 
-@jsonrpc.method('getblocktemplate(capabilities=dict)')
-def getBlockTemplate(capabilities = None):
-    response = requestJsonRPC("getblocktemplate", [capabilities] if capabilities else [], useProductionNode = True)
-    if "error" in response and response["error"] != None:
-        raise ValueError(response["error"])
-    else:
-        return response["result"]
+@app.route('/api/getlastblock/')
+def getLastBlock():
+    return jsonify(request('/blocks/last')), 200
 
-@jsonrpc.method('submitblock(hexData=str, options=dict)')
-def submitBlock(hexData, options = {}):
-    response = requestJsonRPC("submitblock", [hexData, options], useProductionNode = True)
-    if "error" in response and response["error"] != None:
-        raise ValueError(response["error"])
-    else:
-        return response["result"]
 
-# API based on node JSON-RPC
+@app.route('/api/gettransactioninfo/<txid>')
+def getTransactionInfo(txid):
+    return jsonify(request(os.path.join('/transactions/info', txid))), 200
 
-@app.route('/api/searchrawtransactions/<address>/<int:skip>')
-def searchRawTransactions(address, skip):
-    response = requestJsonRPC("searchrawtransactions", [address, 1, skip])
-    while len(response["result"]) > 0 and len(jsonify(response).get_data()) > 5000000:
-        # work around AWS 6MB body size limit
-        transactions = response["result"]
-        half = transactions[:len(transactions)//2]
-        response["result"] = half
-    return jsonify(response), 200
-
-@app.route('/api/getaddressbalance/<address>')
-def getAddressBalance(address):
-    response = requestJsonRPC("getaddressbalance", [ json.dumps({"addresses": [address]}) ] )
-    return jsonify(response), 200
-
-@app.route('/api/getbestblock/')
-def getBestBlock():
-    return jsonify(requestBestBlock()), 200
-
-@app.route('/api/getblock/<heightOrAddress>')
-def getBlock(heightOrAddress):
-    return jsonify(requestBlock(heightOrAddress)), 200
-
-@app.route('/api/syncblock/')
-def syncBlock():
-    response = requestJsonRPC("getblockchaininfo", [])
-    if "error" in response and response["error"] != None:
-        return response
-    else:
-        blockHeight = response["result"]["blocks"]
-        blockHeight = (blockHeight // 2016) * 2016
-        return jsonify(requestBlock(blockHeight))
-
-@app.route('/api/getrawtransaction/<txid>')
-def getRawTransaction(txid):
-    response = requestJsonRPC("getrawtransaction", [txid, True])
-    return jsonify(response), 200
-
-@app.route('/api/getblockchaininfo/')
-def getBlockchainInfo():
-    response = requestJsonRPC("getblockchaininfo", [])
-    return jsonify(response), 200
 
 @app.route('/api/getpeerinfo/')
 def getPeerInfo():
-    response = requestJsonRPC("getpeerinfo", [])
+    return jsonify(request('/peers/connected')), 200
+
+
+@app.route('/api/getaddressbalance/<address>')
+def getAddressBalance(address):
+    return jsonify(request(os.path.join('/addresses/balance', address))), 200
+
+
+@app.route('/api/gettransactions/<address>')
+def searchRawTransactions(address):
+    url = os.path.join('/transactions', 'address', address, 'limit', '4500')
+    response = request(url)
     return jsonify(response), 200
-
-@app.route('/api/getinfo/')
-def getBlockchainInfo8():
-    response = requestJsonRPC("getinfo", [], useProductionNode = True)
-    return jsonify(response), 200
-
-@app.route('/api/getwork/')
-def getMinerWork8():
-    response = requestJsonRPC("getwork", [], useProductionNode = True)
-    if "error" in response and response["error"] != None:
-        return response
-    import codecs, struct
-    # https://en.bitcoin.it/wiki/Getwork
-    data = codecs.decode(response["result"]["data"], 'hex_codec')
-    header = struct.pack('<20I', *struct.unpack('>20I', data[:80]))
-    (version, prev, merkle, epoch, bits, nonce) = struct.unpack('<I32s32s3I', header)
-    response["result"]["header"] = codecs.encode(header, 'hex_codec').decode('utf-8')
-    response["result"]["version"] = version
-    response["result"]["prev"] = codecs.encode(prev[::-1], 'hex_codec').decode('utf-8')
-    response["result"]["merkle"] = codecs.encode(merkle[::-1], 'hex_codec').decode('utf-8')
-    response["result"]["epoch"] = epoch
-    response["result"]["bits"] = "%02x.%06x" % ((bits >> 24), (bits & 0xffffff))
-    response["result"]["difficulty"] = bits / (float)(1<<24)
-    response["result"]["nonce"] = nonce
-    return jsonify(response), 200
-
-@app.route('/api/getbestblock8/')
-def getBestBlock8():
-    return jsonify(requestBestBlock(useProductionNode = True)), 200
-
-@app.route('/api/consensus/')
-def getCommonAncestor():
-    response = requestBestBlock()
-    if "error" in response and response["error"] != None:
-        return response
-    response8 = requestBestBlock(useProductionNode = True)
-    if "error" in response8 and response8["error"] != None:
-        return response
-    upperHeight = min(response["result"]["height"], response8["result"]["height"])
-    lowerHeight = 0
-    if not checkConsensus(upperHeight):
-        while lowerHeight < upperHeight:
-            midHeight = max(lowerHeight + 1, (lowerHeight + upperHeight) // 2)
-            if checkConsensus(midHeight):
-                lowerHeight = midHeight
-            else:
-                upperHeight = midHeight - 1
-
-    return jsonify(requestBlock(upperHeight)), 200
 
 # Web Pages
 
@@ -223,18 +143,24 @@ def getCommonAncestor():
 def home():
     return render_template("home.html")
 
-@app.route("/block/<heightOrAddress>")
-def block(heightOrAddress):
+
+@app.route("/block/<heightOrSignature>")
+def block(heightOrSignature):
     return render_template("block.html", **locals())
+
 
 @app.route("/transaction/<txid>")
 def transaction(txid):
     return render_template("transaction.html", **locals())
 
+
 @app.route("/address/<address>")
 def address(address):
     return render_template("address.html", **locals())
 
+
 # include this for local dev
 if __name__ == '__main__':
+    app.jinja_env.auto_reload = True
+    app.config['TEMPLATES_AUTO_RELOAD'] = True
     app.run()
