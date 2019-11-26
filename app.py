@@ -1,13 +1,18 @@
 # app.py
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, render_template
 from requests.exceptions import RequestException
 from datetime import datetime
 
 import os
 import json
+import pytz
+import time
+import atexit
 import logging
 import requests
+import numpy as np
 import pandas as pd
 
 with open('config.json') as config_file:
@@ -16,18 +21,22 @@ logging.debug("Loaded config file:\n%s", config)
 
 node_host = config.get("url", "http://localhost:9922")
 adds = config.get("address", [])
+sups = config.get("supernode", [])
+target_dir = 'target'
+nano_seconds_in_one_day = 24 * 3600 * 1000000000
 
 app = Flask(__name__)
 app.config.from_object(__name__)
 
 
-def monitor(address):
+def monitor():
     """Monitor for addresses on VSYS chain.
 
     :param address: list of address to be monitored
     :return:
 
     """
+    address = adds
     for s in address:
         _get_txs(s)
 
@@ -35,14 +44,12 @@ def monitor(address):
 def _get_txs(address):
     url = os.path.join('/transactions', 'address', address, 'limit', '4500')
     txs = request(url)[0]
-    # cnt_time = int(time.time() * 1000000000) // 6000000000 * 6000000000
-    # check_time = 5 * 60 * 1000000000
-    txs = [x for x in txs if x['type'] == 2 and x['recipient'] == address and x['amount'] < 10000000000]
+    txs = [x for x in txs if x['type'] == 2 and x['recipient'] == address and x['amount'] < 1500000000]
     if txs:
         df = _make_visualizer(txs)
-        if not os.path.exists('target'):
-            os.makedirs('target')
-        df.to_csv('target/{}_txs.csv'.format(address))
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
+        df.to_csv('{}/{}_txs.csv'.format(target_dir, address))
     return txs
 
 
@@ -101,6 +108,55 @@ def requestBlock(heightOrSignature):
     return response
 
 
+def requestReward(address):
+    response = []
+    count = 0
+    for s in address:
+        data = {}
+        reward = []
+        if os.path.exists('{}/{}_txs.csv'.format(target_dir, s)):
+            with open('{}/{}_txs.csv'.format(target_dir, s)) as csv:
+                df = pd.read_csv(csv)
+            cnt_time = get_current_day_in_nanoseconds()
+            for offset in range(7):
+                k = 7 - offset - 1
+                hk_tz = pytz.timezone('Asia/Hong_Kong')
+                cnt_nano_time = cnt_time - nano_seconds_in_one_day * k
+                current = str(time.strftime("%d/%m/%Y", time.localtime(cnt_nano_time / 1000000000)))
+                current_date = datetime.strptime(current, "%d/%m/%Y")
+                cnt_date = hk_tz.localize(current_date)
+                pre_nano_time = cnt_time - nano_seconds_in_one_day * (k + 1)
+                previous = str(time.strftime("%d/%m/%Y", time.localtime(pre_nano_time / 1000000000)))
+                previous_date = datetime.strptime(previous, "%d/%m/%Y")
+                pre_date = hk_tz.localize(previous_date)
+                date_k_df = df[(df["timestamp"] < str(cnt_date)) & (df["timestamp"] >= str(pre_date))]
+                reward.append(np.sum(date_k_df['amount']))
+        else:
+            reward.append(0.0)
+        data["supernode"] = sups[count]
+        count += 1
+        data["address"] = s
+        data["reward"] = reward
+        response.append(data)
+    return response
+
+
+def get_current_day_in_nanoseconds():
+    current = str(time.strftime("%d/%m/%Y", time.localtime(time.time())))
+    current_date = datetime.strptime(current, "%d/%m/%Y")
+    hk_tz = pytz.timezone('Asia/Hong_Kong')
+    hk_time_current_date = hk_tz.localize(current_date)
+    local_time_current_date = hk_time_current_date.astimezone()
+    current_day_timestamp = time.mktime(local_time_current_date.timetuple())
+    current_day_in_nanoseconds = int(current_day_timestamp * 1000000000) // 60000000000 * 60000000000
+    return current_day_in_nanoseconds
+
+
+@app.route('/api/getreward/')
+def getReward():
+    return jsonify(requestReward(adds)), 200
+
+
 @app.route('/api/getheight/')
 def getHeight():
     return jsonify(request('/blocks/height')), 200
@@ -138,7 +194,6 @@ def searchRawTransactions(address):
     return jsonify(response), 200
 
 # Web Pages
-
 @app.route("/")
 def home():
     return render_template("home.html")
@@ -161,6 +216,12 @@ def address(address):
 
 # include this for local dev
 if __name__ == '__main__':
+    monitor()
+    scheduler = BackgroundScheduler(timezone="UTC")
+    scheduler.add_job(monitor, trigger="cron", hour=1, minute=30)
+
     app.jinja_env.auto_reload = True
     app.config['TEMPLATES_AUTO_RELOAD'] = True
     app.run()
+    # Shut down the scheduler when exiting the app
+    atexit.register(lambda: scheduler.shutdown())

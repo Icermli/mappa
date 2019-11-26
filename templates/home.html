@@ -2,6 +2,8 @@
 {% block content %}
 <div>production server node: vsys supernode</div>
 <div id="blockchain-data"></div>
+<div>The following rewards are based on leasing amount 10000 VSYS from last 7 days</div>
+<div id="reward-data"></div>
 <div id="peer-data"></div>
 <script>
 $(document).ready(function () {
@@ -16,13 +18,13 @@ $(document).ready(function () {
     $('#blockchain-data').json2html(data, transform);
   });
 
-  $.getJSON('/api/getpeerinfo/', function (data) {
+  $.getJSON('/api/getreward/', function (data) {
     console.log(data);
     var transform =
       {'<>':'div','html':[
-        {'<>':'div','html':'peer @${address} version ${applicationVersion} name ${peerName}</a>'} ] };
+        {'<>':'div','html':'supernode: ${supernode} reward: ${reward}'} ] };
 
-    $('#peer-data').json2html(data["peers"], transform);
+    $('#reward-data').json2html(data, transform);
   });
 
 });
