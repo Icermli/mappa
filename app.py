@@ -4,6 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, render_template
 from requests.exceptions import RequestException
 from datetime import datetime
+from waitress import serve
 
 import os
 import json
@@ -15,9 +16,11 @@ import requests
 import numpy as np
 import pandas as pd
 
+logger = logging.getLogger(__name__)
+
 with open('config.json') as config_file:
     config = json.load(config_file)
-logging.debug("Loaded config file:\n%s", config)
+logger.debug("Loaded config file:\n%s", config)
 
 node_host = config.get("url", "http://localhost:9922")
 adds = config.get("address", [])
@@ -29,16 +32,17 @@ app = Flask(__name__)
 app.config.from_object(__name__)
 
 
-def monitor():
+def monitor(address):
     """Monitor for addresses on VSYS chain.
 
     :param address: list of address to be monitored
     :return:
 
     """
-    address = adds
+    logger.info("loading data ...")
     for s in address:
         _get_txs(s)
+    logger.info("finished loading")
 
 
 def _get_txs(address):
@@ -84,14 +88,14 @@ def request(api, post_data='', api_key=None):
         if post_data:
             headers['Content-Type'] = 'application/json'
             data_str = '-d {}'.format(post_data)
-            logging.debug("curl -X POST %s %s %s" % (header_str, data_str, url))
+            logger.debug("curl -X POST %s %s %s" % (header_str, data_str, url))
             return requests.post(url, data=post_data, headers=headers).json()
         else:
-            logging.debug("curl -X GET %s %s" % (header_str, url))
+            logger.debug("curl -X GET %s %s" % (header_str, url))
             return requests.get(url, headers=headers).json()
     except RequestException as ex:
         msg = 'Failed to get response: {}'.format(ex)
-        logging.error(msg)
+        logger.error(msg)
 
 
 def requestBlock(heightOrSignature):
@@ -132,7 +136,8 @@ def requestReward(address):
                 date_k_df = df[(df["timestamp"] < str(cnt_date)) & (df["timestamp"] >= str(pre_date))]
                 reward.append(np.sum(date_k_df['amount']))
         else:
-            reward.append(0.0)
+            for offset in range(7):
+                reward.append(0.0)
         data["supernode"] = sups[count]
         count += 1
         data["address"] = s
@@ -214,14 +219,21 @@ def address(address):
     return render_template("address.html", **locals())
 
 
+def main():
+    monitor(adds)
+
+
 # include this for local dev
 if __name__ == '__main__':
-    monitor()
+    logging.basicConfig(level=logging.INFO)
     scheduler = BackgroundScheduler(timezone="UTC")
-    scheduler.add_job(monitor, trigger="cron", hour=1, minute=30)
+    scheduler.add_job(main, trigger="cron", hour=1, minute=30)
+    scheduler.print_jobs()
+    scheduler.start()
 
+    main()
     app.jinja_env.auto_reload = True
     app.config['TEMPLATES_AUTO_RELOAD'] = True
-    app.run()
+    serve(app, host='0.0.0.0', port=5000)
     # Shut down the scheduler when exiting the app
     atexit.register(lambda: scheduler.shutdown())
