@@ -18,7 +18,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-with open('config.json') as config_file:
+with open(os.path.join(os.path.abspath(os.path.dirname(__file__)), 'config.json')) as config_file:
     config = json.load(config_file)
 logger.debug("Loaded config file:\n%s", config)
 
