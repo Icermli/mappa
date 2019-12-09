@@ -11,12 +11,13 @@ $(document).ready(function () {
         {'<>':'div','html':'type: ${type}'},
         {'<>':'div','html':'block: <a href="/block/${height}">${height}</a>'},
         {'<>':'div','html':'recipient: ${recipient}'},
-        {'<>':'div','html':'amount: ${amount}'},
+        {'<>':'div','html':'amount: <span id="amount-data">${amount}</span>'},
         {'<>':'div','html':'status: ${status}'},
         {'<>':'div','html':'timestamp: ${timestamp}'}] };
 
     $('#tx-data').json2html(data, transformTx);
-
+    // format amount field
+    $('#amount-data').text(parseFloat($('#amount-data').text())/100000000);
   });
 });
 </script>

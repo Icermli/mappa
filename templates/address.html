@@ -9,12 +9,12 @@ $(document).ready(function () {
     var transformBalance =
       {'<>':'div','html':[
         {'<>':'div','html':'address: {{address}}</a>'},
-	    {'<>':'div','html':'balance: Ψ<span id="balance-data">${balance}</span>'},
+	    {'<>':'div','html':'balance: <span id="balance-data">${balance}</span> VSYS'},
         {'<>':'div','html':'transactions:'} ] };
 
     $('#address-data').json2html(data, transformBalance);
     // format balance field
-    $('#balance-data').text(parseFloat($('#balance-data').text()));
+    $('#balance-data').text(parseFloat($('#balance-data').text())/100000000);
   });
 
   $.getJSON('/api/gettransactions/{{address}}', function (data) {
