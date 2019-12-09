@@ -48,7 +48,7 @@ def monitor(address):
 def _get_txs(address):
     url = os.path.join('/transactions', 'address', address, 'limit', '4500')
     txs = request(url)[0]
-    txs = [x for x in txs if x['type'] == 2 and x['recipient'] == address and x['amount'] < 1500000000]
+    txs = [x for x in txs if x['type'] == 2 and x['recipient'] == address and x['amount'] < 8000000000]
     if txs:
         df = _make_visualizer(txs)
         if not os.path.exists(target_dir):
@@ -69,7 +69,7 @@ def _make_visualizer(data, vis_type=None):
         df['sender'] = [x['proofs'][0]['address'] for x in data]
         df['recipient'] = [x['recipient'] if 'recipient' in x else None for x in data]
         df['fee'] = [x['fee']/100000000 for x in data]
-        df['amount'] = ['{:.4f}'.format(x['amount']/100000000) if 'amount' in x else 0 for x in data]
+        df['amount'] = ['{:.8f}'.format(x['amount']/100000000) if 'amount' in x else 0 for x in data]
         df['status'] = [x['status'] for x in data]
         df['leaseId'] = [x['leaseId'] if 'leaseId' in x else None for x in data]
         vis = df
@@ -134,7 +134,7 @@ def requestReward(address):
                 previous_date = datetime.strptime(previous, "%d/%m/%Y")
                 pre_date = hk_tz.localize(previous_date)
                 date_k_df = df[(df["timestamp"] < str(cnt_date)) & (df["timestamp"] >= str(pre_date))]
-                reward.append(np.sum(date_k_df['amount']))
+                reward.append('{:.8f}'.format(np.sum(date_k_df['amount'])))
         else:
             for offset in range(7):
                 reward.append(0.0)
