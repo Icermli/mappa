@@ -22,7 +22,7 @@ $(document).ready(function () {
     console.log(data);
     var transform =
       {'<>':'div','html':[
-        {'<>':'div','html': '<div style="padding-right: 150px; width: 100px; display: inline-block;">supernode: ${supernode}</div> <div style="width: 100px; display: inline-block;">reward: ${reward}</div>'} ] };
+        {'<>':'div','html': '<div style="padding-right: 150px; width: 100px; display: inline-block;">supernode: <a href="/address/${address}">${supernode}</a></div> <div style="width: 100px; display: inline-block;">reward: ${reward}</div>'} ] };
 
     $('#reward-data').json2html(data, transform);
   });
