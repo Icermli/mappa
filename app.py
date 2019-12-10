@@ -40,6 +40,11 @@ def monitor(address):
 
     """
     logger.info("loading data ...")
+    cnt_time = time.time()
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
+    with open('{}/last_update_time.json'.format(target_dir), 'w') as t:
+        json.dump({"last_update_time": cnt_time}, t)
     for s in address:
         _get_txs(s)
     logger.info("finished loading")
@@ -154,6 +159,15 @@ def get_current_day_in_nanoseconds():
     return current_day_in_nanoseconds
 
 
+def requestLastUpdateTime():
+    if os.path.exists('{}/last_update_time.json'.format(target_dir)):
+        with open('{}/last_update_time.json'.format(target_dir), 'r') as t:
+            update_time = json.load(t)
+    else:
+        update_time = 0
+    return update_time
+
+
 @app.route('/api/getreward/')
 def getReward():
     return jsonify(requestReward(adds)), 200
@@ -194,6 +208,11 @@ def searchRawTransactions(address):
     url = os.path.join('/transactions', 'address', address, 'limit', '4500')
     response = request(url)
     return jsonify(response), 200
+
+@app.route('/api/getlastupdatetime/')
+def getLastUpdateTime():
+    return requestLastUpdateTime(), 200
+
 
 # Web Pages
 @app.route("/")

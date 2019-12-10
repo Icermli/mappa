@@ -3,6 +3,7 @@
 <div>production server node: vsys fullnode</div>
 <div id="blockchain-data"></div>
 <div>The following rewards are based on leasing amount 10000 VSYS from last 7 days</div>
+<div id="time-data"></div>
 <div id="reward-data"></div>
 <div id="peer-data"></div>
 <script>
@@ -16,6 +17,15 @@ $(document).ready(function () {
         {'<>':'div','html':'generator: ${generator}'} ] };
 
     $('#blockchain-data').json2html(data, transform);
+  });
+
+  $.getJSON('/api/getlastupdatetime/', function (data) {
+    console.log(data);
+    var transform =
+      {'<>':'div','html':[
+        {'<>':'div','html':'last update time: ${last_update_time}'} ] };
+
+    $('#time-data').json2html(data, transform);
   });
 
   $.getJSON('/api/getreward/', function (data) {
