@@ -149,10 +149,7 @@ def requestReward(address):
 def get_current_day_in_nanoseconds():
     current = str(time.strftime("%d/%m/%Y", time.localtime(time.time())))
     current_date = datetime.strptime(current, "%d/%m/%Y")
-    hk_tz = pytz.timezone('Asia/Hong_Kong')
-    hk_time_current_date = hk_tz.localize(current_date)
-    local_time_current_date = hk_time_current_date.astimezone()
-    current_day_timestamp = time.mktime(local_time_current_date.timetuple())
+    current_day_timestamp = time.mktime(current_date.timetuple())
     current_day_in_nanoseconds = int(current_day_timestamp * 1000000000) // 60000000000 * 60000000000
     return current_day_in_nanoseconds
 
