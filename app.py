@@ -209,6 +209,7 @@ def searchRawTransactions(address):
     response = request(url)
     return jsonify(response), 200
 
+
 @app.route('/api/getlastupdatetime/')
 def getLastUpdateTime():
     return requestLastUpdateTime(), 200
