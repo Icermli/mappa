@@ -5,3 +5,4 @@ requests
 flask
 APScheduler
 waitress
+base58

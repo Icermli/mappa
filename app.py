@@ -1,10 +1,12 @@
 # app.py
+from __future__ import absolute_import
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, render_template
 from requests.exceptions import RequestException
 from datetime import datetime
 from waitress import serve
+from entry import data_entry_from_base58_str
 
 import os
 import json
@@ -32,10 +34,10 @@ app = Flask(__name__)
 app.config.from_object(__name__)
 
 
-def monitor(address):
+def monitor(add):
     """Monitor for addresses on VSYS chain.
 
-    :param address: list of address to be monitored
+    :param add: list of address to be monitored
     :return:
 
     """
@@ -45,21 +47,28 @@ def monitor(address):
         os.makedirs(target_dir)
     with open('{}/last_update_time.json'.format(target_dir), 'w') as t:
         json.dump({"last_update_time": cnt_time}, t)
-    for s in address:
+    for s in add:
         _get_txs(s)
     logger.info("finished loading")
 
 
-def _get_txs(address):
-    url = os.path.join('/transactions', 'address', address, 'limit', '4500')
-    txs = request(url)[0]
-    txs = [x for x in txs if x['type'] == 2 and x['recipient'] == address and x['amount'] < 8000000000]
+def _get_txs(add):
+    url = os.path.join('/transactions', 'address', add, 'limit', '4500')
+    ttxs = request(url)[0]
+    txs = [x for x in ttxs if x['type'] == 2 and x['recipient'] == add and x['amount'] < 8000000000]
+    ctxs = [x for x in ttxs if x['type'] == 9 and x['status'] == "Success" and x['functionIndex'] in [3, 4]]
+    ctxs = [x for x in ctxs if len(data_entry_from_base58_str(x['functionData'])) == 2 and data_entry_from_base58_str(x['functionData'])[0].data == add]
     if txs:
         df = _make_visualizer(txs)
         if not os.path.exists(target_dir):
             os.makedirs(target_dir)
-        df.to_csv('{}/{}_txs.csv'.format(target_dir, address))
-    return txs
+        df.to_csv('{}/{}_txs.csv'.format(target_dir, add))
+    if ctxs:
+        df = _make_visualizer(ctxs, 'entry')
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
+        df.to_csv('{}/{}_ctxs.csv'.format(target_dir, add))
+    return txs, ctxs
 
 
 def _make_visualizer(data, vis_type=None):
@@ -75,6 +84,19 @@ def _make_visualizer(data, vis_type=None):
         df['recipient'] = [x['recipient'] if 'recipient' in x else None for x in data]
         df['fee'] = [x['fee']/100000000 for x in data]
         df['amount'] = ['{:.8f}'.format(x['amount']/100000000) if 'amount' in x else 0 for x in data]
+        df['status'] = [x['status'] for x in data]
+        df['leaseId'] = [x['leaseId'] if 'leaseId' in x else None for x in data]
+        vis = df
+    elif vis_type is 'entry':
+        df = pd.DataFrame()
+        df['timestamp'] = [datetime.fromtimestamp(x['timestamp'] // 1000000000).strftime('%Y-%m-%d %H:%M:%S') for x in data]
+        df['id'] = [x['id'] for x in data]
+        df['height'] = [x['height'] for x in data]
+        df['type'] = [x['type'] for x in data]
+        df['sender'] = [x['proofs'][0]['address'] for x in data]
+        df['recipient'] = [data_entry_from_base58_str(x['functionData'])[0].data for x in data]
+        df['fee'] = [x['fee'] / 100000000 for x in data]
+        df['amount'] = ['{:.8f}'.format(data_entry_from_base58_str(x['functionData'])[1].data / 100000000) for x in data]
         df['status'] = [x['status'] for x in data]
         df['leaseId'] = [x['leaseId'] if 'leaseId' in x else None for x in data]
         vis = df
@@ -117,12 +139,13 @@ def requestBlock(heightOrSignature):
     return response
 
 
-def requestReward(address):
+def requestReward(add):
     response = []
     count = 0
-    for s in address:
+    for s in add:
         data = {}
         reward = []
+        token_reward = []
         if os.path.exists('{}/{}_txs.csv'.format(target_dir, s)):
             with open('{}/{}_txs.csv'.format(target_dir, s)) as csv:
                 df = pd.read_csv(csv)
@@ -142,11 +165,32 @@ def requestReward(address):
                 reward.append('{:.8f}'.format(np.sum(date_k_df['amount'])))
         else:
             for offset in range(7):
-                reward.append(0.0)
+                reward.append('{:.8f}'.format(0.0))
+        if os.path.exists('{}/{}_ctxs.csv'.format(target_dir, s)):
+            with open('{}/{}_ctxs.csv'.format(target_dir, s)) as csv:
+                df = pd.read_csv(csv)
+            cnt_time = get_current_day_in_nanoseconds()
+            for offset in range(7):
+                k = 7 - offset - 1
+                hk_tz = pytz.timezone('Asia/Hong_Kong')
+                cnt_nano_time = cnt_time - nano_seconds_in_one_day * k
+                current = str(time.strftime("%d/%m/%Y", time.localtime(cnt_nano_time / 1000000000)))
+                current_date = datetime.strptime(current, "%d/%m/%Y")
+                cnt_date = hk_tz.localize(current_date)
+                pre_nano_time = cnt_time - nano_seconds_in_one_day * (k + 1)
+                previous = str(time.strftime("%d/%m/%Y", time.localtime(pre_nano_time / 1000000000)))
+                previous_date = datetime.strptime(previous, "%d/%m/%Y")
+                pre_date = hk_tz.localize(previous_date)
+                date_k_df = df[(df["timestamp"] < str(cnt_date)) & (df["timestamp"] >= str(pre_date))]
+                token_reward.append('{:.8f}'.format(np.sum(date_k_df['amount'])))
+        else:
+            for offset in range(7):
+                token_reward.append('{:.8f}'.format(0.0))
         data["supernode"] = sups[count]
         count += 1
         data["address"] = s
         data["reward"] = reward
+        data["token_reward"] = token_reward
         response.append(data)
     return response
 
