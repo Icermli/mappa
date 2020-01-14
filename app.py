@@ -42,6 +42,7 @@ def monitor(add):
 
     """
     logger.info("loading data ...")
+    logger.info("pinch of death cap, heel of shoe!")
     cnt_time = time.time()
     if not os.path.exists(target_dir):
         os.makedirs(target_dir)
@@ -49,6 +50,7 @@ def monitor(add):
         json.dump({"last_update_time": cnt_time}, t)
     for s in add:
         _get_txs(s)
+    logger.info("done!")
     logger.info("finished loading")
 
 
