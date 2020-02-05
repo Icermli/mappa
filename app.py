@@ -61,7 +61,7 @@ def _get_effective_balance():
     effective_balance = []
     for add in sup_adds:
         try:
-            effective_balance.append(request(os.path.join('/addresses/effectiveBalance', add))["balance"])
+            effective_balance.append(request(os.path.join('/addresses/effectiveBalance', add, '1440'))["balance"])
         except RequestException:
             effective_balance.append(0)
     df = pd.DataFrame()
@@ -165,6 +165,7 @@ def requestReward(add, days):
         data = {}
         reward = []
         token_reward = []
+        expect = []
         if os.path.exists('{}/{}_txs.csv'.format(target_dir, s)):
             with open('{}/{}_txs.csv'.format(target_dir, s)) as csv:
                 df = pd.read_csv(csv)
@@ -213,9 +214,13 @@ def requestReward(add, days):
             effective_balance = [1] * days
         data["supernode"] = sups[count]
         data["supernode_address"] = sup_adds[count]
-        expect_days = next((i for i, x in enumerate(reward[::-1]) if float(x) > 0), 0) + 1
+        expect_days = next((i for i, x in enumerate(reward[::-1][1:]) if float(x) > 0), len(reward)-1) + 1
         expect_reward = 60 * 24 * 36 * (1-fee[count]) / effective_balance[count] * 10000 * 100000000
-        data["reward_expected"] = '{:.8f}'.format(expect_reward * expect_days)
+        format_reward = expect_reward * expect_days
+        rate = (float(reward[-1])-format_reward)/format_reward*100
+        expect_rate = '{:.2f}%'.format(rate) if rate > -99 else '/'
+        expect = ['{:.8f}'.format(format_reward), '{:.4f}'.format(float(reward[-1])-format_reward), expect_rate]
+        data["reward_expected"] = expect
         count += 1
         data["address"] = s
         data["reward"] = reward
