@@ -27,6 +27,8 @@ logger.debug("Loaded config file:\n%s", config)
 node_host = config.get("url", "http://localhost:9922")
 adds = config.get("address", [])
 sups = config.get("supernode", [])
+sup_adds = config.get("supernode_address", [])
+fee = config.get("fee", [])
 target_dir = 'target'
 nano_seconds_in_one_day = 24 * 3600 * 1000000000
 
@@ -48,10 +50,25 @@ def monitor(add):
         os.makedirs(target_dir)
     with open('{}/last_update_time.json'.format(target_dir), 'w') as t:
         json.dump({"last_update_time": cnt_time}, t)
+    _get_effective_balance()
     for s in add:
         _get_txs(s)
     logger.info("done!")
     logger.info("finished loading")
+
+
+def _get_effective_balance():
+    effective_balance = []
+    for add in sup_adds:
+        try:
+            effective_balance.append(request(os.path.join('/addresses/effectiveBalance', add))["balance"])
+        except RequestException:
+            effective_balance.append(0)
+    df = pd.DataFrame()
+    df['effective_balance'] = effective_balance
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
+    df.to_csv('{}/effective_balance.csv'.format(target_dir))
 
 
 def _get_txs(add):
@@ -141,7 +158,7 @@ def requestBlock(heightOrSignature):
     return response
 
 
-def requestReward(add):
+def requestReward(add, days):
     response = []
     count = 0
     for s in add:
@@ -152,8 +169,8 @@ def requestReward(add):
             with open('{}/{}_txs.csv'.format(target_dir, s)) as csv:
                 df = pd.read_csv(csv)
             cnt_time = get_current_day_in_nanoseconds()
-            for offset in range(7):
-                k = 7 - offset - 1
+            for offset in range(days):
+                k = days - offset - 1
                 hk_tz = pytz.timezone('Asia/Hong_Kong')
                 cnt_nano_time = cnt_time - nano_seconds_in_one_day * k
                 current = str(time.strftime("%d/%m/%Y", time.localtime(cnt_nano_time / 1000000000)))
@@ -166,14 +183,14 @@ def requestReward(add):
                 date_k_df = df[(df["timestamp"] < str(cnt_date)) & (df["timestamp"] >= str(pre_date))]
                 reward.append('{:.8f}'.format(np.sum(date_k_df['amount'])))
         else:
-            for offset in range(7):
+            for offset in range(days):
                 reward.append('{:.8f}'.format(0.0))
         if os.path.exists('{}/{}_ctxs.csv'.format(target_dir, s)):
             with open('{}/{}_ctxs.csv'.format(target_dir, s)) as csv:
                 df = pd.read_csv(csv)
             cnt_time = get_current_day_in_nanoseconds()
-            for offset in range(7):
-                k = 7 - offset - 1
+            for offset in range(days):
+                k = days - offset - 1
                 hk_tz = pytz.timezone('Asia/Hong_Kong')
                 cnt_nano_time = cnt_time - nano_seconds_in_one_day * k
                 current = str(time.strftime("%d/%m/%Y", time.localtime(cnt_nano_time / 1000000000)))
@@ -186,9 +203,19 @@ def requestReward(add):
                 date_k_df = df[(df["timestamp"] < str(cnt_date)) & (df["timestamp"] >= str(pre_date))]
                 token_reward.append('{:.8f}'.format(np.sum(date_k_df['amount'])))
         else:
-            for offset in range(7):
+            for offset in range(days):
                 token_reward.append('{:.8f}'.format(0.0))
+        if os.path.exists('{}/effective_balance.csv'.format(target_dir)):
+            with open('{}/effective_balance.csv'.format(target_dir)) as csv:
+                df = pd.read_csv(csv)
+            effective_balance = df['effective_balance']
+        else:
+            effective_balance = [1] * days
         data["supernode"] = sups[count]
+        data["supernode_address"] = sup_adds[count]
+        expect_days = next((i for i, x in enumerate(reward[::-1]) if float(x) > 0), 0) + 1
+        expect_reward = 60 * 24 * 36 * (1-fee[count]) / effective_balance[count] * 10000 * 100000000
+        data["reward_expected"] = '{:.8f}'.format(expect_reward * expect_days)
         count += 1
         data["address"] = s
         data["reward"] = reward
@@ -216,7 +243,7 @@ def requestLastUpdateTime():
 
 @app.route('/api/getreward/')
 def getReward():
-    return jsonify(requestReward(adds)), 200
+    return jsonify(requestReward(adds, 7)), 200
 
 
 @app.route('/api/getheight/')

@@ -2,10 +2,11 @@
 {% block content %}
 <div>production server node: vsys fullnode</div>
 <div id="blockchain-data"></div>
-<div>The following rewards are based on leasing amount 10000 VSYS from last 7 days</div>
+<div>The following rewards are based on leasing amount 10000 VSYS in last 7 days</div>
 <div id="time-data"></div>
 <div id="reward-data"></div>
 <div id="creward-data"></div>
+<div id="ereward-data"></div>
 <div id="peer-data"></div>
 <script>
 $(document).ready(function () {
@@ -45,6 +46,15 @@ $(document).ready(function () {
         {'<>':'div','html': '<div style="padding-right: 150px; width: 100px; display: inline-block;">supernode: <a href="/address/${address}">${supernode}</a></div> <div style="width: 100px; display: inline-block;">token reward: ${token_reward}</div>'} ] };
 
     $('#creward-data').json2html(data, transform);
+  });
+
+  $.getJSON('/api/getreward/', function (data) {
+    console.log(data);
+    var transform =
+      {'<>':'div','html':[
+        {'<>':'div','html': '<div style="padding-right: 150px; width: 100px; display: inline-block;">supernode: <a href="/address/${address}">${supernode}</a></div> <div style="width: 100px; display: inline-block;">expected reward: ${reward_expected}</div>'} ] };
+
+    $('#ereward-data').json2html(data, transform);
   });
 
   $.getJSON('/api/getpeerinfo/', function (data) {
